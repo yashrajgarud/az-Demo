@@ -1,0 +1,36 @@
+%scala
+val containerName = "staging"
+val storageAccountName = "storagedhp01"
+val key = "cNNX3Ii8/JbrdRipStTlo0+oTwAr+zyEMp3iaSD3SvwWpv4VCK5CVBmo/+KXhD32Sse4EyGD4fdNfugxRVzrBQ==" 
+val url = "wasbs://" + containerName + "@" + storageAccountName + ".blob.core.windows.net/"
+var config = "fs.azure.account.key." + storageAccountName + ".blob.core.windows.net"
+mount command
+dbutils.fs.mount(
+source = url,
+mountPoint = "/mnt/staging",
+extraConfigs = Map(config -> key))
+
+%scala
+val containerName = "formula1"
+val storageAccountName = "storagedhp01"
+val key = "cNNX3Ii8/JbrdRipStTlo0+oTwAr+zyEMp3iaSD3SvwWpv4VCK5CVBmo/+KXhD32Sse4EyGD4fdNfugxRVzrBQ==" 
+val url = "wasbs://" + containerName + "@" + storageAccountName + ".blob.core.windows.net/"
+var config = "fs.azure.account.key." + storageAccountName + ".blob.core.windows.net"
+dbutils.fs.mount(
+source = url,
+mountPoint = "/mnt/formula1",
+extraConfigs = Map(config -> key))
+
+%fs
+ls dbfs:/mnt/
+
+%scala
+val containerName = "output"
+val storageAccountName = "storagedhp01"
+val key = "cNNX3Ii8/JbrdRipStTlo0+oTwAr+zyEMp3iaSD3SvwWpv4VCK5CVBmo/+KXhD32Sse4EyGD4fdNfugxRVzrBQ==" 
+val url = "wasbs://" + containerName + "@" + storageAccountName + ".blob.core.windows.net/"
+var config = "fs.azure.account.key." + storageAccountName + ".blob.core.windows.net"
+dbutils.fs.mount(
+source = url,
+mountPoint = "/mnt/output",
+extraConfigs = Map(config -> key))
