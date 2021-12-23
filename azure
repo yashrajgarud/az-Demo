@@ -1,1 +1,21 @@
+#Reading Common Record Format File from ADLS
+#Superset Dataframe 
+file_location = r"/mnt/staging/Common Record Format.txt"
+file_type = "csv"
 
+#Schema extraction
+infer_schema = "true"
+first_row_is_header = "true"
+delimiter = ","
+
+
+crfschema = spark.read.format(file_type) \
+  .option("inferSchema", infer_schema) \
+  .option("header", first_row_is_header) \
+  .option("sep", delimiter) \
+  .load(file_location)
+columns  = [col.strip() for col in crfschema.columns]
+crfschema = crfschema.toDF(*columns)
+
+#Displaying Schema
+crfschema.show()
