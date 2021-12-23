@@ -19,3 +19,182 @@ crfschema = crfschema.toDF(*columns)
 
 #Displaying Schema
 crfschema.show()
+
+
+# Reading Demo1 client file from ADLS
+#Subset Dataframe
+file_location = r"/mnt/staging/Demo1.txt"
+file_type = "csv"
+
+#Schema extraction
+infer_schema = "true"
+first_row_is_header = "true"
+delimiter = ","
+
+
+clientschema = spark.read.format(file_type) \
+  .option("inferSchema", infer_schema) \
+  .option("header", first_row_is_header) \
+  .option("sep", delimiter) \
+  .load(file_location)
+columns  = [col.strip() for col in clientschema.columns]
+clientschema = clientschema.toDF(*columns)
+
+#Displaying Schema
+display(clientschema)
+
+
+
+
+# Reading Common record format mapping file from ADLS
+file_location = r"/mnt/staging/CRF-Details_CSV.csv"
+file_type = "csv"
+
+infer_schema = "false"
+first_row_is_header = "true"
+delimiter = ","
+
+mappingfile = spark.read.format(file_type) \
+.option("inferSchema", infer_schema) \
+.option("header", first_row_is_header) \
+.option("sep", delimiter) \
+.load(file_location)
+
+display(mappingfile)
+
+#Mapping the received column names in client file with the actual columns names(present in common record format)
+mapping = {row['ColumnNamesReceived']:row['ColumnNames'] for row in mappingfile.collect()}
+
+#Displaying Mapped format
+print(mapping)
+
+
+
+
+#Considering the scenarios(Different column names, Missing columns, Overflow columns)
+
+from pyspark.sql.functions import *
+from pyspark.sql.types import MapType, StringType
+from itertools import chain
+def parsingdataframe(df,crfschema,mapping):
+    
+    #Creating dataframe 
+    s1 = spark.createDataFrame(crfschema.dtypes, ["d1_name", "d1_type"])
+    print("s1")
+    print(s1)
+    s2 = spark.createDataFrame(df.dtypes, ["d2_name", "d2_type"])
+    print("s2")
+    print(s2)
+    
+    #Scenario 1- Mapping for different column names
+    mapping_expr = create_map([lit(x) for x in chain(*mapping.items())])
+    print("this")
+    print(mapping_expr)
+    s2 = s2.withColumn("value", mapping_expr.getItem(col("d2_name")))
+
+    s2 = s2.withColumn("d2_name",when(s2.value.isNotNull(), s2.value).otherwise(s2.d2_name))
+    s2.show()
+    row_list = s2.select('d2_name').collect()
+    mappingColumns = [row.d2_name for row in row_list]
+    df = df.toDF(*mappingColumns)
+   
+    s2 = spark.createDataFrame(df.dtypes, ["d2_name", "d2_type"])
+    
+    # Performing operation to check difference in mapping
+    difference = (
+            s1.join(s2, s1.d1_name == s2.d2_name, how="outer")
+            
+        ).select("d2_name","d1_name")
+    
+    
+    #Scenario 2- For overflow columns
+    diff = difference.filter(difference.d1_name.isNull())
+    row_list = diff.select('d2_name').collect()
+    overflowColumns = [row.d2_name for row in row_list]
+    
+    #Scenario 3- For missing columns
+    diff = difference.filter(difference.d2_name.isNull())
+    
+    row_list = diff.select('d1_name').collect()
+    missingColumns = [row.d1_name for row in row_list]
+    metric = create_map(list(chain(*(
+   (lit(name), col(name)) for name in overflowColumns))))
+  
+    #Packing overflow columns into ClientSpecificField and dropping them accordingly
+    if overflowColumns:
+        
+           
+        df=df.withColumn("ClientSpecificField",metric)
+        
+        for new_col in overflowColumns:
+            
+            
+            df =df.drop(new_col)
+    
+    #Missing columns will have null values in Common record format 
+    if missingColumns:
+        for new_col in missingColumns:
+            df = df.withColumn(new_col, lit(None).cast('string'))
+       
+    return df
+    
+    
+   #For Demo1.txt
+#Calling the function, displaying schema and dataframe
+df_mapped1 = parsingdataframe(clientschema,crfschema,mapping)
+df_mapped1.printSchema()
+display(df_mapped1)
+
+#For Demo2.txt
+#Calling the function, displaying schema and dataframe
+df_mapped2 = parsingdataframe(client_schema,crfschema,mapping)
+df_mapped2.printSchema()
+display(df_mapped2)
+
+
+
+#For Demo1.txt
+#Packed columns are in the form of key value pair in ClientSpecificField
+#Storing the keys in the form of list into a variable Key1
+Key1=df_mapped1.select(map_keys("ClientSpecificField").alias("key")).distinct().rdd.flatMap(lambda x: x).collect()
+print(Key1)
+
+#For Demo2.txt
+#Packed columns are in the form of key value pair in ClientSpecificField
+#Storing the keys in the form of list into a variable Key2
+Key2=df_mapped1.select(map_keys("ClientSpecificField").alias("key")).distinct().rdd.flatMap(lambda x: x).collect()
+print(Key2)
+
+
+#For Demo1.txt
+#Converting map type to struct type of ClientSpecificField and storing it into a new column ClientSpecific
+df_new1 = df_mapped1.withColumn("ClientSpecific",
+    struct(*[col("ClientSpecificField").getItem(c).alias(c) for c in Key[0]])
+)
+display(df_new1)
+
+#For Demo2.txt
+#Converting map type to struct type of ClientSpecificField and storing it into a new column ClientSpecific
+df_new2 = df_mapped2.withColumn("ClientSpecific",
+    struct(*[col("ClientSpecificField").getItem(cf).alias(cf) for cf in Key[0]])
+)
+display(df_new2)
+
+
+#For Demo1.txt
+#Using select operation to display packed column in ClientSpecific into seperate column
+df_final1=df_new1.select("*","ClientSpecific.*").drop("ClientSpecificField","ClientSpecific")
+display(df_final1)
+
+#For Demo2.txt
+#Using select operation to display packed column in ClientSpecific into seperate column
+df_final2=df_new2.select("*","ClientSpecific.*").drop("ClientSpecificField","ClientSpecific")
+display(df_final2)
+
+
+
+    
+    
+
+
+
